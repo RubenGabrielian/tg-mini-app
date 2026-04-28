@@ -6,4 +6,10 @@ html, body {
   background: var(--tg-theme-bg-color, #ffffff);
   color: var(--tg-theme-text-color, #000000);
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* Divide-y color follows Telegram theme */
+.divide-y > * + * {
+  border-top-color: rgba(128, 128, 128, 0.1);
 }

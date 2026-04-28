@@ -74,6 +74,19 @@ function ageBarColor(days: number): string {
   return '#ef4444';
 }
 
+function ageBadgeStyle(days: number): { bg: string; text: string } {
+  if (days < 1) return { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' };
+  if (days < 3) return { bg: 'rgba(36,129,204,0.12)', text: 'var(--tg-theme-button-color,#2481cc)' };
+  if (days < 7) return { bg: 'rgba(249,115,22,0.12)', text: '#ea580c' };
+  return { bg: 'rgba(239,68,68,0.12)', text: '#dc2626' };
+}
+
+function ageText(days: number): string {
+  if (days < 1) return 'այսօր';
+  if (days < 2) return 'երեկ';
+  return `${Math.floor(days)} օր`;
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('hy-AM', { hour: '2-digit', minute: '2-digit' });
 }
@@ -147,6 +160,7 @@ export default function Home() {
   const [toast, setToast] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [skipping, setSkipping] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready();
@@ -168,7 +182,7 @@ export default function Home() {
       ]);
       setData(tasksResult);
       setCompletedToday(completedResult.tasks);
-      setAllCompleted(null); // invalidate so history refreshes on next switch
+      setAllCompleted(null);
     } catch (e) {
       console.error(e);
     } finally {
@@ -213,6 +227,21 @@ export default function Home() {
     }
   }
 
+  async function addTask(rawText: string) {
+    await api('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ raw_text: rawText }),
+    });
+    haptic('success');
+    showToast('Ավելացվեց');
+    await load();
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-tg-hint text-sm">
@@ -232,151 +261,201 @@ export default function Home() {
   const isEmpty = !data.now && data.nearby.length === 0 && data.later.length === 0;
 
   return (
-    <main className="min-h-screen px-4 py-5 max-w-md mx-auto">
-      {/* Stats */}
-      <StatsBar stats={data.stats} todayCount={completedToday.length} />
+    <>
+      <main className="min-h-screen px-4 pt-5 pb-28 max-w-md mx-auto">
+        {/* Stats */}
+        <StatsBar stats={data.stats} todayCount={completedToday.length} />
 
-      {/* View toggle */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl bg-tg-secondaryBg">
-        {(['tasks', 'history'] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={`flex-1 py-1.5 rounded-lg text-sm transition-all duration-150 ${
-              view === v
-                ? 'bg-tg-bg text-tg-text font-medium shadow-sm'
-                : 'text-tg-hint'
-            }`}
-          >
-            {v === 'tasks' ? 'Ցուցակ' : 'Պատմություն'}
-          </button>
-        ))}
-      </div>
+        {/* View toggle */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl bg-tg-secondaryBg">
+          {(['tasks', 'history'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`flex-1 py-1.5 rounded-lg text-sm transition-all duration-150 ${
+                view === v
+                  ? 'bg-tg-bg text-tg-text font-medium shadow-sm'
+                  : 'text-tg-hint'
+              }`}
+            >
+              {v === 'tasks' ? 'Ցուցակ' : 'Պատմություն'}
+            </button>
+          ))}
+        </div>
 
-      <AnimatePresence mode="wait">
-        {view === 'tasks' ? (
-          <motion.div
-            key="tasks"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            {isEmpty && !skipping && <EmptyState todayCount={completedToday.length} />}
+        <AnimatePresence mode="wait">
+          {view === 'tasks' ? (
+            <motion.div
+              key="tasks"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {isEmpty && !skipping && (
+                <EmptyState todayCount={completedToday.length} onAdd={() => setAddOpen(true)} />
+              )}
 
-            {/* Now */}
-            {(data.now || skipping) && (
-              <section className="mb-8">
-                <h2 className="text-tg-hint text-xs uppercase tracking-widest mb-3 font-medium">
-                  Հիմա
-                </h2>
-                <AnimatePresence mode="wait">
-                  {skipping ? (
-                    <NowCardSkeleton key="skeleton" />
-                  ) : (
-                    data.now && (
-                      <NowCard
-                        key={data.now.id}
-                        task={data.now}
-                        onComplete={complete}
-                        onSkip={skip}
-                        busy={completing}
-                      />
-                    )
-                  )}
-                </AnimatePresence>
-              </section>
-            )}
+              {/* Now */}
+              {(data.now || skipping) && (
+                <section className="mb-8">
+                  <SectionLabel>Հիմա</SectionLabel>
+                  <AnimatePresence mode="wait">
+                    {skipping ? (
+                      <NowCardSkeleton key="skeleton" />
+                    ) : (
+                      data.now && (
+                        <NowCard
+                          key={data.now.id}
+                          task={data.now}
+                          onComplete={complete}
+                          onSkip={skip}
+                          busy={completing}
+                        />
+                      )
+                    )}
+                  </AnimatePresence>
+                </section>
+              )}
 
-            {/* Nearby */}
-            {data.nearby.length > 0 && (
-              <section className="mb-7">
-                <h2 className="text-tg-hint text-xs uppercase tracking-widest mb-3 font-medium">
-                  Մերձակա
-                </h2>
-                <motion.ul
-                  variants={listVariants}
-                  initial="hidden"
-                  animate="show"
-                  className="space-y-0.5"
-                >
-                  {data.nearby.map((t) => (
-                    <motion.li key={t.id} variants={itemVariants}>
-                      <TaskRow task={t} onComplete={complete} />
-                    </motion.li>
-                  ))}
-                </motion.ul>
-              </section>
-            )}
-
-            {/* Later */}
-            {data.later.length > 0 && (
-              <section className="mb-7">
-                <button
-                  onClick={() => setShowLater((v) => !v)}
-                  className="flex items-center gap-1.5 text-tg-hint text-xs uppercase tracking-widest mb-3 font-medium"
-                >
-                  Հետո ({data.later.length})
-                  <span className="text-[10px] opacity-50">{showLater ? '▾' : '▸'}</span>
-                </button>
-                <AnimatePresence>
-                  {showLater && (
+              {/* Nearby */}
+              {data.nearby.length > 0 && (
+                <section className="mb-7">
+                  <SectionLabel>Մերձակա</SectionLabel>
+                  <div
+                    className="rounded-2xl overflow-hidden divide-y"
+                    style={{
+                      background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)',
+                      borderColor: 'rgba(128,128,128,0.08)',
+                    }}
+                  >
                     <motion.ul
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="space-y-0.5 overflow-hidden"
+                      variants={listVariants}
+                      initial="hidden"
+                      animate="show"
                     >
-                      {data.later.map((t) => (
-                        <TaskRow key={t.id} task={t} onComplete={complete} />
+                      {data.nearby.map((t) => (
+                        <motion.li key={t.id} variants={itemVariants}>
+                          <TaskRow task={t} onComplete={complete} />
+                        </motion.li>
                       ))}
                     </motion.ul>
-                  )}
-                </AnimatePresence>
-              </section>
-            )}
+                  </div>
+                </section>
+              )}
 
-            {/* Done today */}
-            {completedToday.length > 0 && (
-              <section className="mt-2 pt-5 border-t border-tg-hint/10">
-                <button
-                  onClick={() => setShowDone((v) => !v)}
-                  className="flex items-center gap-1.5 text-tg-hint text-xs uppercase tracking-widest mb-3 font-medium"
-                >
-                  Արված այսօր ({completedToday.length})
-                  <span className="text-[10px] opacity-50">{showDone ? '▾' : '▸'}</span>
-                </button>
-                <AnimatePresence>
-                  {showDone && (
-                    <motion.ul
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="space-y-0.5 overflow-hidden"
-                    >
-                      {completedToday.map((t) => (
-                        <CompletedRow key={t.id} task={t} />
-                      ))}
-                    </motion.ul>
-                  )}
-                </AnimatePresence>
-              </section>
-            )}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="history"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+              {/* Later */}
+              {data.later.length > 0 && (
+                <section className="mb-7">
+                  <button
+                    onClick={() => setShowLater((v) => !v)}
+                    className="flex items-center gap-1.5 mb-3"
+                  >
+                    <SectionLabel as="span">Հետո ({data.later.length})</SectionLabel>
+                    <span className="text-[10px] text-tg-hint/50">{showLater ? '▾' : '▸'}</span>
+                  </button>
+                  <AnimatePresence>
+                    {showLater && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div
+                          className="rounded-2xl overflow-hidden divide-y"
+                          style={{
+                            background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)',
+                            borderColor: 'rgba(128,128,128,0.08)',
+                          }}
+                        >
+                          {data.later.map((t) => (
+                            <TaskRow key={t.id} task={t} onComplete={complete} />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </section>
+              )}
+
+              {/* Done today */}
+              {completedToday.length > 0 && (
+                <section className="mt-2 pt-5 border-t border-tg-hint/10">
+                  <button
+                    onClick={() => setShowDone((v) => !v)}
+                    className="flex items-center gap-1.5 mb-3"
+                  >
+                    <SectionLabel as="span">Արված այսօր ({completedToday.length})</SectionLabel>
+                    <span className="text-[10px] text-tg-hint/50">{showDone ? '▾' : '▸'}</span>
+                  </button>
+                  <AnimatePresence>
+                    {showDone && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div
+                          className="rounded-2xl overflow-hidden divide-y"
+                          style={{
+                            background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)',
+                            borderColor: 'rgba(128,128,128,0.08)',
+                          }}
+                        >
+                          {completedToday.map((t) => (
+                            <CompletedRow key={t.id} task={t} />
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </section>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <HistoryView tasks={allCompleted} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* FAB */}
+      <AnimatePresence>
+        {!addOpen && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            whileTap={{ scale: 0.88 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+            onClick={() => { haptic('light'); setAddOpen(true); }}
+            className="fixed bottom-6 right-4 z-40 w-14 h-14 rounded-full flex items-center justify-center shadow-lg bg-tg-button text-tg-buttonText"
+            aria-label="Ավելացնել"
           >
-            <HistoryView tasks={allCompleted} />
-          </motion.div>
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <path d="M11 4v14M4 11h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </motion.button>
         )}
       </AnimatePresence>
+
+      {/* Add task bottom sheet */}
+      <AddTaskSheet
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onAdd={addTask}
+      />
 
       {/* Toast */}
       <AnimatePresence>
@@ -386,73 +465,99 @@ export default function Home() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-tg-text text-tg-bg px-5 py-2.5 rounded-full text-sm font-medium shadow-lg whitespace-nowrap"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-tg-text text-tg-bg px-5 py-2.5 rounded-full text-sm font-medium shadow-lg whitespace-nowrap z-50"
           >
             {toast}
           </motion.div>
         )}
       </AnimatePresence>
-    </main>
+    </>
   );
 }
 
-// TODO: make tappable to open a detailed stats screen
+function SectionLabel({
+  children,
+  as: Tag = 'h2',
+}: {
+  children: React.ReactNode;
+  as?: 'h2' | 'span';
+}) {
+  return (
+    <Tag className="text-tg-hint text-xs uppercase tracking-widest font-semibold">
+      {children}
+    </Tag>
+  );
+}
+
 function StatsBar({ stats, todayCount }: { stats: Stats; todayCount: number }) {
   const completed = useCountUp(stats.total_completed);
   const streak = useCountUp(stats.current_streak);
 
   return (
-    <div className="mb-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-[11px] text-tg-hint uppercase tracking-wider mb-1">Արված</div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-tg-text">{completed}</span>
-            <span className="text-tg-hint text-sm">/</span>
-            <span className="text-tg-hint text-sm">{stats.total_captured}</span>
-          </div>
-          {stats.longest_streak > 0 && (
-            <div className="text-[11px] text-tg-hint/50 mt-0.5">
-              max {stats.longest_streak} օր
-            </div>
-          )}
+    <div className="mb-5 grid grid-cols-3 gap-2">
+      {/* Completed */}
+      <div
+        className="rounded-2xl p-3 flex flex-col gap-0.5"
+        style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
+      >
+        <span className="text-[10px] text-tg-hint uppercase tracking-wider">Արված</span>
+        <div className="flex items-baseline gap-0.5 mt-0.5">
+          <span className="text-xl font-bold text-tg-text leading-none">{completed}</span>
+          <span className="text-xs text-tg-hint leading-none">/{stats.total_captured}</span>
         </div>
+        {stats.longest_streak > 0 && (
+          <span className="text-[10px] text-tg-hint/50 mt-0.5">max {stats.longest_streak} օր</span>
+        )}
+      </div>
 
-        <div className="text-right">
-          <div className="text-[11px] text-tg-hint uppercase tracking-wider mb-1">Շարան</div>
-          <div className="flex items-baseline justify-end gap-1">
-            {stats.current_streak > 0 && (
-              <motion.span
-                animate={{ scale: [1, 1.3, 1] }}
-                transition={{ repeat: Infinity, repeatDelay: 4, duration: 0.4 }}
-                className="text-lg leading-none"
-              >
-                🔥
-              </motion.span>
-            )}
-            <span className="text-2xl font-bold text-tg-text">{streak}</span>
-            <span className="text-tg-hint text-sm">օր</span>
-          </div>
+      {/* Streak */}
+      <div
+        className="rounded-2xl p-3 flex flex-col gap-0.5"
+        style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
+      >
+        <span className="text-[10px] text-tg-hint uppercase tracking-wider">Շարան</span>
+        <div className="flex items-center gap-1 mt-0.5">
+          {stats.current_streak > 0 && (
+            <motion.span
+              animate={{ scale: [1, 1.25, 1] }}
+              transition={{ repeat: Infinity, repeatDelay: 4, duration: 0.4 }}
+              className="text-base leading-none"
+            >
+              🔥
+            </motion.span>
+          )}
+          <span className="text-xl font-bold text-tg-text leading-none">{streak}</span>
+          <span className="text-xs text-tg-hint leading-none">օր</span>
         </div>
       </div>
 
-      {todayCount > 0 && (
-        <div className="flex items-center gap-1 mt-3">
-          {Array.from({ length: Math.min(todayCount, 10) }).map((_, i) => (
-            <motion.div
-              key={i}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: i * 0.04, type: 'spring', stiffness: 400, damping: 20 }}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: 'var(--tg-theme-button-color, #2481cc)', opacity: 0.6 }}
-            />
-          ))}
-          {todayCount > 10 && (
-            <span className="text-[11px] text-tg-hint/60">+{todayCount - 10}</span>
-          )}
+      {/* Today */}
+      <div
+        className="rounded-2xl p-3 flex flex-col gap-0.5"
+        style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
+      >
+        <span className="text-[10px] text-tg-hint uppercase tracking-wider">Այսօր</span>
+        <div className="flex items-baseline gap-0.5 mt-0.5">
+          <span className="text-xl font-bold text-tg-text leading-none">{todayCount}</span>
         </div>
-      )}
+        {todayCount > 0 && (
+          <div className="flex items-center gap-0.5 mt-1 flex-wrap">
+            {Array.from({ length: Math.min(todayCount, 7) }).map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: i * 0.04, type: 'spring', stiffness: 400, damping: 20 }}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: 'var(--tg-theme-button-color, #2481cc)', opacity: 0.6 }}
+              />
+            ))}
+            {todayCount > 7 && (
+              <span className="text-[9px] text-tg-hint/60">+{todayCount - 7}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -469,12 +574,7 @@ function NowCard({
   busy: boolean;
 }) {
   const tag = task.location_tag || 'other';
-  const ageText =
-    task._age_days < 1
-      ? 'այսօր'
-      : task._age_days < 2
-        ? 'երեկ'
-        : `${Math.floor(task._age_days)} օր`;
+  const badge = ageBadgeStyle(task._age_days);
 
   return (
     <motion.div
@@ -485,28 +585,37 @@ function NowCard({
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
     >
-      {/* Accent line */}
+      {/* Accent bar */}
       <div
         style={{
           height: 3,
           background: 'var(--tg-theme-button-color, #2481cc)',
-          opacity: 0.75,
+          opacity: 0.8,
         }}
       />
 
       <div className="p-5">
-        {/* Meta */}
-        <div className="flex items-center gap-2 text-tg-hint text-xs mb-3">
-          <span>{tagEmoji[tag] || '📌'}</span>
-          <span>{tagLabel[tag] || 'Այլ'}</span>
-          <span className="opacity-30">·</span>
-          <span>~{task.estimated_minutes} րոպե</span>
-          <span className="opacity-30">·</span>
-          <span>{ageText}</span>
+        {/* Meta row */}
+        <div className="flex items-center gap-2 mb-4">
+          <span
+            className="text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
+            style={{ background: badge.bg, color: badge.text }}
+          >
+            {tagEmoji[tag] || '📌'} {tagLabel[tag] || 'Այլ'}
+          </span>
+          <span className="text-xs text-tg-hint">~{task.estimated_minutes} րոպե</span>
+          <span
+            className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
+            style={{ background: badge.bg, color: badge.text }}
+          >
+            {ageText(task._age_days)}
+          </span>
         </div>
 
         {/* Title */}
-        <div className="text-[22px] font-semibold leading-snug mb-5">{task.title}</div>
+        <div className="text-[24px] font-bold leading-snug mb-5 tracking-tight">
+          {task.title}
+        </div>
 
         {/* Age bar */}
         <div
@@ -530,16 +639,16 @@ function NowCard({
           <button
             onClick={() => onComplete(task.id)}
             disabled={busy}
-            className="flex-1 bg-tg-button text-tg-buttonText py-3 rounded-xl font-medium active:opacity-80 transition-opacity disabled:opacity-50"
+            className="flex-1 bg-tg-button text-tg-buttonText py-3.5 rounded-xl font-semibold text-[15px] active:opacity-80 transition-opacity disabled:opacity-50"
           >
-            ✓ Արեցի
+            Արեցի
           </button>
           <button
             onClick={() => onSkip(task.id)}
             disabled={busy}
-            className="px-5 py-3 rounded-xl text-tg-hint border border-tg-hint/20 active:opacity-60 transition-opacity disabled:opacity-40"
+            className="px-5 py-3.5 rounded-xl text-sm text-tg-hint border border-tg-hint/20 active:opacity-60 transition-opacity disabled:opacity-40"
           >
-            Հաջորդը
+            Հաջ →
           </button>
         </div>
       </div>
@@ -557,21 +666,15 @@ function NowCardSkeleton() {
       className="rounded-2xl overflow-hidden"
       style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
     >
-      <div
-        style={{
-          height: 3,
-          background: 'var(--tg-theme-button-color, #2481cc)',
-          opacity: 0.25,
-        }}
-      />
+      <div style={{ height: 3, background: 'var(--tg-theme-button-color, #2481cc)', opacity: 0.2 }} />
       <div className="p-5">
-        <div className="h-3 w-28 rounded-full bg-tg-hint/15 animate-pulse mb-3" />
-        <div className="h-6 w-4/5 rounded-lg bg-tg-hint/15 animate-pulse mb-2" />
-        <div className="h-4 w-2/3 rounded-lg bg-tg-hint/10 animate-pulse mb-5" />
+        <div className="h-5 w-28 rounded-full bg-tg-hint/15 animate-pulse mb-4" />
+        <div className="h-7 w-4/5 rounded-lg bg-tg-hint/15 animate-pulse mb-2" />
+        <div className="h-5 w-1/2 rounded-lg bg-tg-hint/10 animate-pulse mb-5" />
         <div className="h-[3px] rounded-full bg-tg-hint/10 mb-5" />
         <div className="flex gap-2">
           <div className="flex-1 h-12 rounded-xl bg-tg-hint/15 animate-pulse" />
-          <div className="w-24 h-12 rounded-xl bg-tg-hint/10 animate-pulse" />
+          <div className="w-20 h-12 rounded-xl bg-tg-hint/10 animate-pulse" />
         </div>
       </div>
     </motion.div>
@@ -581,7 +684,7 @@ function NowCardSkeleton() {
 function TaskRow({ task, onComplete }: { task: Task; onComplete: (id: number) => void }) {
   const tag = task.location_tag || 'other';
   return (
-    <div className="flex items-center gap-3 py-2.5 px-1">
+    <div className="flex items-center gap-3 py-3 px-4">
       <button
         onClick={() => onComplete(task.id)}
         className="w-5 h-5 rounded-full border-2 border-tg-hint/30 active:border-tg-button active:bg-tg-button/10 flex-shrink-0 transition-colors"
@@ -597,7 +700,7 @@ function TaskRow({ task, onComplete }: { task: Task; onComplete: (id: number) =>
 function CompletedRow({ task }: { task: CompletedTask }) {
   const tag = task.location_tag || 'other';
   return (
-    <div className="flex items-center gap-3 py-2 px-1">
+    <div className="flex items-center gap-3 py-3 px-4">
       <span className="text-sm opacity-35">{tagEmoji[tag] || '📌'}</span>
       <span className="flex-1 text-sm text-tg-hint line-through opacity-55 leading-snug">
         {task.title}
@@ -639,11 +742,11 @@ function HistoryView({ tasks }: { tasks: CompletedTask[] | null }) {
     >
       {groups.map(({ label, items }) => (
         <motion.section key={label} variants={itemVariants}>
-          <h3 className="text-[11px] font-medium uppercase tracking-widest text-tg-hint mb-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-tg-hint mb-2">
             {label}
           </h3>
           <div
-            className="rounded-xl overflow-hidden divide-y"
+            className="rounded-2xl overflow-hidden divide-y"
             style={{
               background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)',
               borderColor: 'rgba(128,128,128,0.08)',
@@ -659,7 +762,7 @@ function HistoryView({ tasks }: { tasks: CompletedTask[] | null }) {
   );
 }
 
-function EmptyState({ todayCount }: { todayCount: number }) {
+function EmptyState({ todayCount, onAdd }: { todayCount: number; onAdd: () => void }) {
   if (todayCount > 0) {
     return (
       <motion.div
@@ -670,17 +773,12 @@ function EmptyState({ todayCount }: { todayCount: number }) {
       >
         <svg width="52" height="52" viewBox="0 0 52 52" className="mx-auto mb-4" fill="none">
           <circle
-            cx="26"
-            cy="26"
-            r="22"
+            cx="26" cy="26" r="22"
             stroke="var(--tg-theme-button-color, #2481cc)"
-            strokeWidth="2"
-            opacity="0.2"
+            strokeWidth="2" opacity="0.2"
           />
           <circle
-            cx="26"
-            cy="26"
-            r="22"
+            cx="26" cy="26" r="22"
             stroke="var(--tg-theme-button-color, #2481cc)"
             strokeWidth="2"
             strokeDasharray="138 138"
@@ -698,7 +796,13 @@ function EmptyState({ todayCount }: { todayCount: number }) {
         <div className="text-base font-semibold text-tg-text mb-1">
           Այսօր արել ես {todayCount} բան
         </div>
-        <div className="text-sm text-tg-hint">Ամեն ինչ արված է</div>
+        <div className="text-sm text-tg-hint mb-5">Ամեն ինչ արված է</div>
+        <button
+          onClick={onAdd}
+          className="text-sm px-5 py-2 rounded-xl border border-tg-hint/20 text-tg-hint active:opacity-60 transition-opacity"
+        >
+          + Ավելացնել
+        </button>
       </motion.div>
     );
   }
@@ -711,30 +815,149 @@ function EmptyState({ todayCount }: { todayCount: number }) {
       className="text-center py-14"
     >
       <svg
-        width="48"
-        height="48"
-        viewBox="0 0 48 48"
-        className="mx-auto mb-4 opacity-25"
-        fill="none"
+        width="48" height="48" viewBox="0 0 48 48"
+        className="mx-auto mb-4 opacity-20" fill="none"
       >
         <rect x="6" y="14" width="36" height="26" rx="4" stroke="currentColor" strokeWidth="2" />
-        <path
-          d="M6 26h9l3 5h12l3-5h9"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M17 8l7 6 7-6"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <path d="M6 26h9l3 5h12l3-5h9" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <path d="M17 8l7 6 7-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         <line x1="24" y1="4" x2="24" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       </svg>
       <div className="text-base font-medium text-tg-text mb-1">Ոչինչ չկա</div>
-      <div className="text-sm text-tg-hint">Գրի՛ր bot-ին հաջորդ task-ը</div>
+      <div className="text-sm text-tg-hint mb-5">Ավելացրու առաջին գործը</div>
+      <button
+        onClick={onAdd}
+        className="text-sm px-5 py-2 rounded-xl bg-tg-button text-tg-buttonText active:opacity-80 transition-opacity font-medium"
+      >
+        + Ավելացնել
+      </button>
     </motion.div>
+  );
+}
+
+function AddTaskSheet({
+  open,
+  onClose,
+  onAdd,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAdd: (text: string) => Promise<void>;
+}) {
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => inputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    } else {
+      setText('');
+    }
+  }, [open]);
+
+  async function handleSubmit() {
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd(trimmed);
+      onClose();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={onClose}
+            className="fixed inset-0 z-50"
+            style={{ background: 'rgba(0,0,0,0.45)' }}
+          />
+
+          {/* Sheet */}
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 32, stiffness: 380 }}
+            className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl overflow-hidden max-w-md mx-auto"
+            style={{ background: 'var(--tg-theme-bg-color, #ffffff)' }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-9 h-1 rounded-full bg-tg-hint/25" />
+            </div>
+
+            <div className="px-4 pt-1 pb-8">
+              <div className="text-[11px] font-semibold text-tg-hint uppercase tracking-wider mb-3">
+                Նոր գործ
+              </div>
+
+              <div
+                className="flex gap-2 items-end rounded-2xl p-3"
+                style={{ background: 'var(--tg-theme-secondary-bg-color, #f4f4f5)' }}
+              >
+                <textarea
+                  ref={inputRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  placeholder="Ի՞նչ պետք է անել..."
+                  disabled={submitting}
+                  rows={2}
+                  className="flex-1 resize-none bg-transparent text-tg-text placeholder-tg-hint/50 outline-none border-none text-[15px] leading-relaxed"
+                  style={{ minHeight: 44 }}
+                />
+                <motion.button
+                  whileTap={{ scale: 0.88 }}
+                  onClick={handleSubmit}
+                  disabled={!text.trim() || submitting}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center bg-tg-button text-tg-buttonText flex-shrink-0 disabled:opacity-35 transition-opacity"
+                >
+                  {submitting ? (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
+                      className="w-4 h-4 border-2 border-tg-buttonText/30 border-t-tg-buttonText rounded-full"
+                    />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 13V3M3 8l5-5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </motion.button>
+              </div>
+
+              {submitting && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-xs text-tg-hint mt-2 text-center"
+                >
+                  Վերլուծում...
+                </motion.p>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
